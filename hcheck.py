@@ -1,12 +1,13 @@
 #!/bin/env python3
-# ./hcheck.py | python3 -m json.tool
+# ./hcheck.py <domain> | python3 -m json.tool
 
-import urllib.request
 import urllib.parse
+import urllib.request
 import dns.resolver
 import socket
 import subprocess
 import json
+import sys
 import os
 import re
 
@@ -263,7 +264,7 @@ class hCheck(object):
 
 
     def ssl_versions(self):
-        depricated = ['tls1', 'tls1_0', 'tls1_1']
+        depricated = ['tls1', 'tls1_1']
         for version in depricated:
             quit = subprocess.Popen(['echo', 'Q'], stdout=subprocess.PIPE)
             cmd = ['openssl', 's_client', '-' + version, '-connect', self.__domain, '-port', '443']
@@ -280,17 +281,20 @@ class hCheck(object):
     def print_results(self):
         print (json.dumps(self.__results))
 
-
-check = hCheck('isz.no')
-check.ssl_versions()
-check.http_redirect_to_https()
-check.http_headers()
-check.http_same_origin_policy()
-check.domain_caa()
-#check.domain_dnssec()
-check.email_spf()
-check.email_dmarc()
-check.print_results()
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print('./check.py <domain>')
+        sys.exit()
+    check = hCheck(sys.argv[1])
+    check.ssl_versions()
+    check.http_redirect_to_https()
+    check.http_headers()
+    check.http_same_origin_policy()
+    check.domain_caa()
+    #check.domain_dnssec()
+    check.email_spf()
+    check.email_dmarc()
+    check.print_results()
 
 # TODO
 # DNSSEC
@@ -298,10 +302,7 @@ check.print_results()
 # http cache
 # http expect-ct
 # CSP
-# Certificate
-# certificate stapling
-
-
+# Certificate, self-signed, weak cipers, weak key strength, stapling etc
 
 
 
