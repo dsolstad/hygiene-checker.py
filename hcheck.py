@@ -282,7 +282,7 @@ class hCheck(object):
         print (json.dumps(self.__results))
 
 
-check = hCheck('github.com')
+check = hCheck('isz.no')
 #check.ssl_versions()
 #check.http_redirect_to_https()
 check.http_headers()
