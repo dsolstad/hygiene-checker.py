@@ -36,7 +36,7 @@ class hCheck(object):
                 headers_map[key.lower()] =  val.strip()
         return headers_map
 
-    """
+
     def __http_headers_cookies(self, value=''):
         if value == '': return
         result = {}
@@ -48,7 +48,6 @@ class hCheck(object):
 
         result['status'] = 0
         self.__results['http_headers_cookies'] = result
-    """
 
 
     def __http_headers_hsts(self, value=''):
@@ -263,7 +262,7 @@ class hCheck(object):
         self.__results['domain_caa'] = result
 
 
-    def ssl_version(self):
+    def ssl_versions(self):
         depricated = ['tls1', 'tls1_0', 'tls1_1']
         for version in depricated:
             quit = subprocess.Popen(['echo', 'Q'], stdout=subprocess.PIPE)
@@ -272,7 +271,7 @@ class hCheck(object):
                 output = subprocess.check_output(cmd, stdin=quit.stdout, stderr=subprocess.DEVNULL)
             except Exception as e:
                 output = e.output
-            if re.search('New, \(NONE\), Cipher is \(NONE\)', output,decode(), re.M):
+            if re.search('New, \(NONE\), Cipher is \(NONE\)', output.decode(), re.M):
                 self.__results['ssl_support_' + version] = {'status': 0}
             else:
                 self.__results['ssl_support_' + version] = {'status': 2}
@@ -283,15 +282,15 @@ class hCheck(object):
 
 
 check = hCheck('isz.no')
-#check.ssl_versions()
-#check.http_redirect_to_https()
+check.ssl_versions()
+check.http_redirect_to_https()
 check.http_headers()
-#check.http_same_origin_policy()
-#check.domain_caa()
+check.http_same_origin_policy()
+check.domain_caa()
 #check.domain_dnssec()
-#check.email_spf()
-#check.email_dmarc()
-#check.print_results()
+check.email_spf()
+check.email_dmarc()
+check.print_results()
 
 # TODO
 # DNSSEC
@@ -299,8 +298,10 @@ check.http_headers()
 # http cache
 # http expect-ct
 # CSP
-# Certificate, self-signed, key strength etc.
+# Certificate
 # certificate stapling
+
+
 
 
 
