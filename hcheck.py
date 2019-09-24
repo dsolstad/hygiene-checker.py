@@ -301,6 +301,7 @@ if __name__ == '__main__':
 # cookies
 # http cache
 # http expect-ct
+# sub-resource integrity
 # CSP
 # Certificate, self-signed, weak cipers, weak key strength, stapling etc
 
