@@ -298,10 +298,11 @@ if __name__ == '__main__':
 
 # TODO
 # DNSSEC
+# dns zone transfer
 # cookies
 # http cache
 # http expect-ct
-# sub-resource integrity
+# sub-resource integrity check
 # CSP
 # Certificate, self-signed, weak cipers, weak key strength, stapling etc
 
