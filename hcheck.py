@@ -304,6 +304,7 @@ if __name__ == '__main__':
 # http expect-ct
 # sub-resource integrity check
 # CSP
+# Banner grabbing
 # Certificate, self-signed, weak cipers, weak key strength, stapling etc
 
 
