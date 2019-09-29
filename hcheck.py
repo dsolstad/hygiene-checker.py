@@ -20,10 +20,13 @@ import re
 class hCheck(object):
 
     __domain = ''
-    __results = {'http': {}, 'domain': {}, 'email': {}, 'crypto': {}}
+    __results = {'http': {}, 'domain': {}, 'email': {}, 'crypto': {}, 'stats': {}}
     __http_present = False
     __https_present = False
     __email_present = False
+    __num_failed = 0
+    __num_pass = 0
+    __num_misconfigured = 0
 
     def __init__(self, domain):
         self.__domain = domain
@@ -33,6 +36,23 @@ class hCheck(object):
         print (json.dumps(self.__results))
 
 
+    def get_stats(self):
+        self.__results['stats'] = {}
+
+        for cat_key, cat_val in self.__results.items():
+           for key, val in cat_val.items():
+                if val['status'] == 0:
+                    self.__num_pass += 1
+                elif val['status'] == 1:
+                    self.__num_misconfigurated += 1
+                else:
+                    self.__num_failed += 1
+
+        self.__results['stats']['failed'] = self.__num_failed
+        self.__results['stats']['pass'] = self.__num_pass
+        self.__results['stats']['misconfigured'] = self.__num_misconfigured
+                    
+    
     def domain_check(self):
         self.__domain_caa()
         self.__domain_dnssec()
@@ -517,4 +537,5 @@ if __name__ == '__main__':
     check.http_check()
     check.domain_check()
     check.email_check()
+    check.get_stats()
     check.print_results()
