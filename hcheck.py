@@ -1,5 +1,9 @@
 #!/bin/env python3
 #
+# Requirements: 
+# pip3 install dnspython
+# openssl
+#
 # ./hcheck.py <domain> | python3 -m json.tool
 # status: 0 = pass, 1 = not proper, 2 = fail
 #
@@ -160,8 +164,8 @@ class hCheck(object):
         result['details'] = []
 
         if value == '':
-            result['details'] = ['No cookies found']
-            self.__results['http']['headers_cookie_flags'] = result
+            #result['details'] = ['No cookies found']
+            #self.__results['http']['headers_cookie_flags'] = result
             return
 
         for cookie in value.split('\n'):
@@ -385,37 +389,47 @@ class hCheck(object):
 
 
     def __email_spf(self):
+        result = {}
+        result['status'] = 2
+        result['ref'] = 'https://en.wikipedia.org/wiki/Sender_Policy_Framework'
         resolver = dns.resolver.Resolver()
         try:
             response = resolver.query(self.__domain, "TXT")
         except:
-            self.__results['email']['spf'] = {'status': 2}
+            self.__results['email']['spf'] = result
             return
 
         buf = ''
         for rdata in response:
             buf = buf + str(rdata)
         if re.search('[~|-]all', buf, re.M):
-            self.__results['email']['spf'] = {'status': 0}
-        else:
-            self.__results['email']['spf'] = {'status': 2}
+            result['status'] = 0
+
+        result['implemented'] = buf
+        self.__results['email']['spf'] = result
 
 
     def __email_dmarc(self):
+        result = {}
+        result['status'] = 2
+        result['ref'] = 'https://en.wikipedia.org/wiki/DMARC'
         resolver = dns.resolver.Resolver()
         try:
             response = resolver.query('_dmarc.' + self.__domain, "TXT")
         except:
-            self.__results['email']['dmarc'] = {'status': 2}
+            self.__results['email']['dmarc'] = result
             return
 
         buf = ''
         for rdata in response:
             buf = buf + str(rdata)
         if re.search('p=none', buf, re.M):
-            self.__results['email']['dmarc'] = {'status': 2}
+            result['status'] = 2
         else:
-            self.__results['email']['dmarc'] = {'status': 0}
+            result['status'] = 0
+        
+        result['implemented'] = buf
+        self.__results['email']['dmarc'] = result
 
 
     def __domain_caa(self):
