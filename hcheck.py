@@ -118,12 +118,13 @@ class hCheck(object):
         result['details'] = []
 
         # Iterate through all script and link elements
-        for resource in re.findall(r'(<(script|link).*?>)', body.decode("utf-8")):
+        for resource in re.findall(r'(<(script|link).*?>)', body.decode("utf-8"), re.I):
+            resource = [x.strip().lower() for x in resource]
             # Ignore link elements that is not stylesheets
             if resource[1] == 'link' and resource[0].find('stylesheet') == -1:
                 continue
             # Continue only if the itengrity attribute is missing
-            if resource[0].find('integrity') == -1:
+            if resource[0].find('integrity=') == -1:
                 # Extract the URL
                 url = re.findall(r'(src|href)="(.*?\/\/.*?)"', resource[0])
                 if url:
