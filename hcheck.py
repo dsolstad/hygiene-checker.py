@@ -1,5 +1,8 @@
 #!/bin/env python3
+#
 # ./hcheck.py <domain> | python3 -m json.tool
+# status: 0 = pass, 1 = not proper, 2 = fail
+#
 
 import urllib.parse
 import urllib.request
@@ -13,15 +16,21 @@ import sys
 import os
 import re
 
-# status: 0 = pass, 1 = not proper, 2 = fail
 
 class hCheck(object):
 
     __domain = ''
     __results = {'http': {}, 'domain': {}, 'email': {}, 'crypto': {}}
+    __http_present = False
+    __https_present = False
+    __email_present = False
 
     def __init__(self, domain):
         self.__domain = domain
+
+
+    def print_results(self):
+        print (json.dumps(self.__results))
 
 
     def domain_check(self):
@@ -31,25 +40,49 @@ class hCheck(object):
 
 
     def crypto_check(self):
-        self.__tls_versions()
+        self.__crypto_tls_versions()
+        self.__crypto_rsa_key_strength()
+        self.__crypto_ocsp_stapling()
 
 
     def email_check(self):
+        resolver = dns.resolver.Resolver()
+        try:
+            response = resolver.query(self.__domain, "MX")
+        except:
+            return
+        self.__email_present = True
         self.__email_spf()
         self.__email_dmarc();
 
 
     def http_check(self):
-        f = None
+        http = None
+        https = None
+        # Check to see if a http server is present at port 80
         try:
-            f = urllib.request.urlopen('https://' + self.__domain)
-        except: return
-        raw_headers = str(f.info())
-        raw_body = f.read()
+            http = urllib.request.urlopen('http://' + self.__domain)
+            self.__http_present = True
+        except:
+            self.__http_present = False
+
+        # Check to see if a https server is present at port 443
+        try:
+            https = urllib.request.urlopen('https://' + self.__domain)
+            self.__https_present = True
+        except:
+            self.__https_present = False
+
+        # If no web servers are present at default ports, the rest of the checks are ignored
+        if self.__https_present == False and self.__https_present == False:
+            return
+
+        raw_headers = str(https.info() if self.__https_present else http.info())
+        raw_body = https.read() if self.__https_present else http.read()
         headers = self.__parse_headers(raw_headers)
 
-        self.__http_subresource_integrity(raw_body)
         self.__http_redirect_to_https()
+        self.__http_subresource_integrity(raw_body)
         self.__http_headers_xss_protection(headers['x-xss-protection'] if 'x-xss-protection' in headers else '')
         self.__http_headers_content_type_options(headers['x-content-type-options'] if 'x-content-type-options' in headers else '')
         self.__http_headers_hsts(headers['strict-transport-security'] if 'strict-transport-security' in headers else '')
@@ -153,9 +186,9 @@ class hCheck(object):
             result['details'].append('Missing includeSubDomains')
         if 'max-age=31536000' not in flags:
             result['details'].append('Missing max-age or max-age set too low')
-        
-        if len(result['details']) == 0:
-            result['status'] = 0
+
+        if len(result['details']) > 0:
+            result['status'] = 1
 
         self.__results['http']['headers_hsts'] = result
 
@@ -317,16 +350,17 @@ class hCheck(object):
 
 
     def __http_redirect_to_https(self):
-        status = 0
+        result = {}
+        result['status'] = 0
         url = None
         try:
             url = urllib.request.urlopen('http://' + self.__domain).geturl()
         except:
-            self.__results['http']['redirect_to_https'] = {'status': status}
+            self.__results['http']['redirect_to_https'] = result
             return
         if url[0:5] != 'https':
-             status = 2
-        self.__results['http']['redirect_to_https'] = {'status': status}
+             result['status'] = 2
+        self.__results['http']['redirect_to_https'] = result
 
 
     def __email_spf(self):
@@ -421,7 +455,7 @@ class hCheck(object):
             print(z[n].to_text(n))"""
 
 
-    def __tls_versions(self):
+    def __crypto_tls_versions(self):
         depricated = ['tls1', 'tls1_1']
         for version in depricated:
             quit = subprocess.Popen(['echo', 'Q'], stdout=subprocess.PIPE)
@@ -436,8 +470,41 @@ class hCheck(object):
                 self.__results['crypto']['tls_support_' + version] = {'status': 2}
 
 
-    def print_results(self):
-        print (json.dumps(self.__results))
+    def __crypto_ocsp_stapling(self):
+        result = {}
+        result['ref'] = 'https://en.wikipedia.org/wiki/OCSP_stapling'
+        result['status'] = 0
+
+        #echo QUIT | openssl s_client -connect example.no:443 -status 2> /dev/null | grep -A 17 'OCSP response:'
+        quit = subprocess.Popen(['echo', 'Q'], stdout=subprocess.PIPE)
+        output = subprocess.check_output(['openssl', 's_client', '-connect', self.__domain, '-port', '443', '-status'], stdin=quit.stdout, stderr=subprocess.DEVNULL)
+
+        if re.search('OCSP Response Status: successful', output.decode(), re.I):
+            result['status'] = 0
+        
+        self.__results['crypto']['ocsp_stapling'] = result
+
+
+    def __crypto_rsa_key_strength(self):
+        result = {}
+        result['ref'] = 'https://www.jscape.com/blog/should-i-start-using-4096-bit-rsa-keys'
+        result['status'] = 0
+
+        #openssl s_client -connect example.com:443 2>/dev/null | openssl x509 -text -noout | grep "Public-Key"
+        connect = subprocess.Popen(['openssl', 's_client', '-connect', self.__domain, '-port', '443'], stderr=subprocess.DEVNULL, stdout=subprocess.PIPE)
+        cert = subprocess.check_output(['openssl', 'x509', '-text', '-noout'], stdin=connect.stdout, stderr=subprocess.DEVNULL)
+        bit = re.findall('RSA Public-Key: \((\d+) bit\)', cert.decode())
+
+        result['implemented'] = bit[0]
+
+        if int(bit[0]) < 2048:
+            result['status'] = 2
+        elif int(bit[0]) == 2048:
+            result['status'] = 0
+        else:
+            result['status'] = 0
+
+        self.__results['crypto']['rsa_key_strength'] = result
 
 
 if __name__ == '__main__':
@@ -450,7 +517,3 @@ if __name__ == '__main__':
     check.domain_check()
     check.email_check()
     check.print_results()
-
-# TODO
-# Certificate, self-signed, weak cipers, weak key strength, stapling etc
-
