@@ -2,7 +2,14 @@
 A passive tool, presented as an API, to check for weaknesses in configurations on a domain. It outputs a JSON, where if "status" is 0, it is a pass, 2 equals failed and 1 is not properly configured.
 
 ## Requirements
+```
 $ pip3 install dnspython
+```
+
+## Usage
+```
+$ python3 hcheck.py <domain> | python3 -m json.tool
+```
 
 ## Current checks
 ### HTTP 
