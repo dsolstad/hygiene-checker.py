@@ -24,7 +24,7 @@ import re
 class hCheck(object):
 
     __domain = ''
-    __results = {'http': {}, 'domain': {}, 'email': {}, 'crypto': {}, 'stats': {}}
+    __results = {'stats': {}, 'http': {}, 'domain': {}, 'email': {}, 'crypto': {}}
     __http_present = False
     __https_present = False
     __email_present = False
@@ -48,7 +48,7 @@ class hCheck(object):
                 if val['status'] == 0:
                     self.__num_pass += 1
                 elif val['status'] == 1:
-                    self.__num_misconfigurated += 1
+                    self.__num_misconfigured += 1
                 else:
                     self.__num_failed += 1
 
@@ -553,3 +553,5 @@ if __name__ == '__main__':
     check.email_check()
     check.get_stats()
     check.print_results()
+
+
