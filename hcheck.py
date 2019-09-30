@@ -29,7 +29,7 @@ class hCheck(object):
     __https_present = False
     __email_present = False
     __num_failed = 0
-    __num_pass = 0
+    __num_passed = 0
     __num_misconfigured = 0
 
     def __init__(self, domain):
@@ -46,14 +46,14 @@ class hCheck(object):
         for cat_key, cat_val in self.__results.items():
            for key, val in cat_val.items():
                 if val['status'] == 0:
-                    self.__num_pass += 1
+                    self.__num_passed += 1
                 elif val['status'] == 1:
                     self.__num_misconfigured += 1
                 else:
                     self.__num_failed += 1
 
         self.__results['stats']['failed'] = self.__num_failed
-        self.__results['stats']['pass'] = self.__num_pass
+        self.__results['stats']['passed'] = self.__num_passed
         self.__results['stats']['misconfigured'] = self.__num_misconfigured
                     
     
@@ -244,17 +244,22 @@ class hCheck(object):
         result['name'] = 'Content-Security-Policy'
         result['implemented'] = value;
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP'
-        result['status'] = 2
+        result['status'] = 0
         result['details'] = []
 
         if value == '':
+            result['status'] = 2
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_content_security_policy'] = result
             return
 
         value = value.lower()
-        if value != 'unsafe-eval' and value != 'unsafe-inline':
-            result['status'] = 0
+        if value.find('unsafe-eval') > 0:
+            result['status'] = 1
+            result['details'].append('unsafe-eval in use')
+        if value.find('unsafe-inline') > 0:v
+            result['details'].append('unsafe-inline in use')
+            result['status'] = 1
 
         self.__results['http']['headers_content_security_policy'] = result
 
@@ -553,5 +558,4 @@ if __name__ == '__main__':
     check.email_check()
     check.get_stats()
     check.print_results()
-
 
