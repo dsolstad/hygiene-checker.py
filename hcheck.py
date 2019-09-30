@@ -257,7 +257,7 @@ class hCheck(object):
         if value.find('unsafe-eval') > 0:
             result['status'] = 1
             result['details'].append('unsafe-eval in use')
-        if value.find('unsafe-inline') > 0:v
+        if value.find('unsafe-inline') > 0:
             result['details'].append('unsafe-inline in use')
             result['status'] = 1
 
