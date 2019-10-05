@@ -1,5 +1,5 @@
 # hcheck.py
-A passive tool, presented as an API, to check for weaknesses in configurations on a domain. It outputs a JSON, where if "status" is 0, it is a pass, 2 equals failed and 1 is not properly configured.
+A passive hygiene scanner, presented as an API, to check for weaknesses of a domain. 
 
 ## Requirements
 ```
