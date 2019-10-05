@@ -92,6 +92,7 @@ class hCheck(object):
         self.__http_headers_referrer_policy()
         self.__http_headers_cookies()
         self.__http_headers_content_security_policy()
+        self.__http_headers_banner_grapping()
         self.__http_same_origin_policy_ajax()
         self.__http_same_origin_policy_flash()
         self.__http_same_origin_policy_silverlight()
@@ -141,6 +142,27 @@ class hCheck(object):
         if self.__http['final_url'][0:5] != 'https':
              result['status'] = 'failed'
         self.__results['http']['redirect_to_https'] = result
+
+
+    def __http_headers_banner_grapping(self):
+        result = {}
+        result['recommendation'] = "Don't disclose unnecessary bits of information about the underlying system."
+        result['ref'] = ''
+        result['status'] = 'passed'
+        result['details'] = []
+
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if headers.get('server'):
+            result['details'].append('server: ' + headers.get('server'))
+
+        if headers.get('x-powered-by'):
+            result['details'].append('x-powered-by: ' + headers.get('x-powered-by'))
+
+        if len(result['details']) > 0:
+            result['status'] = 'failed'
+
+        self.__results['http']['headers_banner_grabbing'] = result
 
 
     def __http_subresource_integrity(self):
