@@ -18,6 +18,7 @@ $ python3 hcheck.py <domain> | python3 -m json.tool
 * Subresource integrity
 * Redirect to HTTPS
 * Same-Origin-Policy misconfigurations
+* Banner grabbing
 
 ### Domain
 * CAA
