@@ -5,7 +5,6 @@
 # openssl
 #
 # ./hcheck.py <domain> | python3 -m json.tool
-# status: 0 = pass, 1 = not proper, 2 = fail
 #
 
 import urllib.parse
@@ -25,12 +24,14 @@ class hCheck(object):
 
     __domain = ''
     __results = {'stats': {}, 'http': {}, 'domain': {}, 'email': {}, 'crypto': {}}
-    __http_present = False
-    __https_present = False
-    __email_present = False
     __num_failed = 0
     __num_passed = 0
     __num_misconfigured = 0
+    __email_present = False
+    __https_present = False
+    __http = {'status': 0, 'final_url': '', 'headers': {}, 'body': ''}
+    __https = {'status': 0, 'final_url': '', 'headers': {}, 'body': ''}
+
 
     def __init__(self, domain):
         self.__domain = domain
@@ -45,31 +46,31 @@ class hCheck(object):
 
         for cat_key, cat_val in self.__results.items():
            for key, val in cat_val.items():
-                if val['status'] == 0:
+                if val['status'] == 'passed':
                     self.__num_passed += 1
-                elif val['status'] == 1:
-                    self.__num_misconfigured += 1
-                else:
+                elif val['status'] == 'failed':
                     self.__num_failed += 1
+                else:
+                    self.__num_misconfigured += 1
 
         self.__results['stats']['failed'] = self.__num_failed
         self.__results['stats']['passed'] = self.__num_passed
         self.__results['stats']['misconfigured'] = self.__num_misconfigured
                     
     
-    def domain_check(self):
+    def check_domain(self):
         self.__domain_caa()
         self.__domain_dnssec()
         self.__domain_zone_transfer()
 
 
-    def crypto_check(self):
+    def check_crypto(self):
         self.__crypto_tls_versions()
         self.__crypto_rsa_key_strength()
         self.__crypto_ocsp_stapling()
 
 
-    def email_check(self):
+    def check_email(self):
         resolver = dns.resolver.Resolver()
         try:
             response = resolver.query(self.__domain, "MX")
@@ -80,41 +81,18 @@ class hCheck(object):
         self.__email_dmarc();
 
 
-    def http_check(self):
-        http = None
-        https = None
-        # Check to see if a http server is present at port 80
-        try:
-            http = urllib.request.urlopen('http://' + self.__domain)
-            self.__http_present = True
-        except:
-            self.__http_present = False
-
-        # Check to see if a https server is present at port 443
-        try:
-            https = urllib.request.urlopen('https://' + self.__domain)
-            self.__https_present = True
-        except:
-            self.__https_present = False
-
-        # If no web servers are present at default ports, the rest of the checks are ignored
-        if self.__https_present == False and self.__https_present == False:
-            return
-
-        raw_headers = str(https.info() if self.__https_present else http.info())
-        raw_body = https.read() if self.__https_present else http.read()
-        headers = self.__parse_headers(raw_headers)
-
+    def check_http(self):
+        self.__get_http_response()
         self.__http_redirect_to_https()
-        self.__http_subresource_integrity(raw_body)
-        self.__http_headers_xss_protection(headers['x-xss-protection'] if 'x-xss-protection' in headers else '')
-        self.__http_headers_content_type_options(headers['x-content-type-options'] if 'x-content-type-options' in headers else '')
-        self.__http_headers_hsts(headers['strict-transport-security'] if 'strict-transport-security' in headers else '')
-        self.__http_headers_frame_options(headers['x-frame-options'] if 'x-frame-options' in headers else '')
-        self.__http_headers_referrer_policy(headers['referrer-policy'] if 'referrer-policy' in headers else '')
-        self.__http_headers_cookies(headers['set-cookie'] if 'set-cookie' in headers else '')
-        self.__http_headers_content_security_policy(headers['content-security-policy'] if 'content-security-policy' in headers else '')
-        self.__http_same_origin_policy_ajax(headers['access-control-allow-origin'] if 'access-control-allow-origin' in headers else '')
+        self.__http_subresource_integrity()
+        self.__http_headers_xss_protection()
+        self.__http_headers_content_type_options()
+        self.__http_headers_hsts()
+        self.__http_headers_frame_options()
+        self.__http_headers_referrer_policy()
+        self.__http_headers_cookies()
+        self.__http_headers_content_security_policy()
+        self.__http_same_origin_policy_ajax()
         self.__http_same_origin_policy_flash()
         self.__http_same_origin_policy_silverlight()
 
@@ -123,11 +101,10 @@ class hCheck(object):
         headers_map = {}
         lines = raw_headers.split('\n')
         lines = list(filter(None, lines))
-
         for header in lines:
             pair = header.split(': ')
             key = pair.pop(0)
-            val = "".join(pair)
+            val = ': '.join(pair)
             if key.lower() in headers_map:
                 headers_map[key.lower()] = headers_map[key.lower()] + '\n' + val.strip()
             else:
@@ -135,14 +112,48 @@ class hCheck(object):
         return headers_map
 
 
-    def __http_subresource_integrity(self, body):
+    def __get_http_response(self):
+        # Check to see if a http server is present at port 80
+        try:
+            http = urllib.request.urlopen('http://' + self.__domain)
+            self.__http['status'] = http.getcode()
+            self.__http['headers'] = self.__parse_headers(str(http.info()))
+            self.__http['body'] = http.read().decode('utf-8')
+            self.__http['final_url'] = http.geturl()
+        except: pass
+
+        # Check to see if a https server is present at port 443
+        try:
+            https = urllib.request.urlopen('https://' + self.__domain)
+            self.__https['status'] = https.getcode()
+            self.__https['headers'] = self.__parse_headers(str(https.info()))
+            self.__https['body'] = https.read().decode('utf-8')
+            self.__https['final_url'] = https.geturl()
+        except: pass
+
+        if self.__https['status'] == 200:
+            self.__https_present = True
+
+
+    def __http_redirect_to_https(self):
         result = {}
+        result['status'] = 'passed'
+        if self.__http['final_url'][0:5] != 'https':
+             result['status'] = 'failed'
+        self.__results['http']['redirect_to_https'] = result
+
+
+    def __http_subresource_integrity(self):
+        result = {}
+        result['recommendation'] = 'Check the integrity of third-party hosted libraries in case they get compromised.'
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity'
-        result['status'] = 0
+        result['status'] = 'passed'
         result['details'] = []
 
+        body = self.__https['body'] if self.__https_present else self.__http['body']
+        
         # Iterate through all script and link elements
-        for resource in re.findall(r'(<(script|link).*?>)', body.decode("utf-8"), re.I):
+        for resource in re.findall(r'(<(script|link).*?>)', body, re.I):
             resource = [x.strip().lower() for x in resource]
             # Ignore link elements that is not stylesheets
             if resource[1] == 'link' and resource[0].find('stylesheet') == -1:
@@ -153,27 +164,30 @@ class hCheck(object):
                 url = re.findall(r'(src|href)="(.*?\/\/.*?)"', resource[0])
                 if url:
                     result['details'].append(resource[0])
-                    result['status'] = 2
+                    result['status'] = 'failed'
         self.__results['http']['subresource_integrity'] = result
 
 
-    def __http_headers_cookies(self, value=''):
+    def __http_headers_cookies(self):
         result = {}
+        result['recommendation'] = "Include the recommended flags to improve the security of cookies."
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie'
-        result['status'] = 0
+        result['status'] = 'passed'
         result['details'] = []
 
-        if value == '':
-            #result['details'] = ['No cookies found']
-            #self.__results['http']['headers_cookie_flags'] = result
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if not headers.get('set-cookie'):
+            result['details'] = ['No cookies found']
+            self.__results['http']['headers_cookie_flags'] = result
             return
 
-        for cookie in value.split('\n'):
+        for cookie in headers['set-cookie'].split('\n'):
             pos = cookie.find('=')
             cookie_name = cookie[0:pos]
             cookie = cookie.lower()
             
-            result['status'] = 0
+            result['status'] = 'passed'
             if 'secure' not in cookie:
                 result['details'].append(cookie_name + ': Missing secure')
             if 'httponly' not in cookie:
@@ -182,29 +196,32 @@ class hCheck(object):
                 result['details'].append(cookie_name + ': Missing samesite')
             
             if len(result['details']) > 0:
-                result['status'] = 2
+                result['status'] = 'failed'
 
             self.__results['http']['headers_cookie_flags'] = result
 
 
-    def __http_headers_hsts(self, value=''):
+    def __http_headers_hsts(self):
         result = {}
         result['name'] = 'Strict-Transport-Security'
-        result['implemented'] = value;
-        result['correct'] = 'max-age=31536000; includeSubDomains; preload';
+        result['recommendation'] = "Implement HSTS to force browsers to use HTTPS."
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security'
-        result['status'] = 2
+        result['status'] = 'failed'
         result['details'] = []
 
-        if value == '':
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if not headers.get('strict-transport-security'):
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_hsts'] = result
             return
 
-        flags = value.split(';')
+        result['implemented'] = headers.get('strict-transport-security')
+
+        flags = result['implemented'].split(';')
         flags = [x.strip().lower() for x in flags]
 
-        result['status'] = 0
+        result['status'] = 'passed'
         if 'preload' not in flags:
             result['details'].append('Missing preload')
         if 'includesubdomains' not in flags:
@@ -213,146 +230,184 @@ class hCheck(object):
             result['details'].append('Missing max-age or max-age set too low')
 
         if len(result['details']) > 0:
-            result['status'] = 1
+            result['status'] = 'misconfigured'
 
         self.__results['http']['headers_hsts'] = result
 
 
-    def __http_headers_cache_control(self, value=''):
+    def __http_headers_cache_control(self):
         result = {}
         result['name'] = 'Cache-Control'
-        result['implemented'] = value;
-        result['correct'] = 'no-store'
+        result['recommendation'] = "Set Cache-Control to 'no-store' to completely prevent browser caching."
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control'
-        result['status'] = 0
+        result['status'] = 'passed'
         result['details'] = []
 
-        if value == '':
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if not headers.get('cache-control'):
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_cache_control'] = result
             return
 
-        value = value.lower()
+        result['implemented'] = headers.get('cache-control')
+
+        value = result['implemented'].lower()
         if value != 'no-store':
-            result['status'] = 2
+            result['status'] = 'failed'
 
         self.__results['http']['headers_content_security_policy'] = result
 
 
-    def __http_headers_content_security_policy(self, value=''):
+    # TODO: Need to improve the checks
+    def __http_headers_content_security_policy(self):
         result = {}
+        result['recommendation'] = 'Implement CSP properly to improve the security significantly.'
         result['name'] = 'Content-Security-Policy'
-        result['implemented'] = value;
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP'
-        result['status'] = 0
+        result['status'] = 'passed'
         result['details'] = []
 
-        if value == '':
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if not headers.get('content-security-policy'):
             result['status'] = 2
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_content_security_policy'] = result
             return
 
-        value = value.lower()
+        result['implemented'] = headers.get('content-security-policy')
+
+        value = result['implemented'].lower()
         if value.find('unsafe-eval') > 0:
-            result['status'] = 1
             result['details'].append('unsafe-eval in use')
         if value.find('unsafe-inline') > 0:
             result['details'].append('unsafe-inline in use')
-            result['status'] = 1
+
+        if len(result['details']) > 0:
+            result['status'] = 'misconfigured'
 
         self.__results['http']['headers_content_security_policy'] = result
 
 
-    def __http_headers_content_type_options(self, value=''):
+    def __http_headers_content_type_options(self):
         result = {}
         result['name'] = 'X-Content-Type-Options'
-        result['implemented'] = value;
-        result['correct'] = 'nosniff';
+        result['recommendation'] = "Set the header to 'nosniff' to prevent browsers at converting the content type based on the content, which can mitigate some sorts of attacks.";
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options'
-        result['status'] = 2
+        result['status'] = 'failed'
         result['details'] = []
 
-        if value == '':
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if not headers.get('x-content-type-options'):
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_content_type_options'] = result
             return
 
-        if result['implemented'] == result['correct']:
-            result['status'] = 0
+        result['implemented'] = headers.get('x-content-type-options')
+
+        if result['implemented'] == 'nosniff':
+            result['status'] = 'passed'
 
         self.__results['http']['headers_content_type_options'] = result
 
 
-    def __http_headers_referrer_policy(self, value=''):
+    def __http_headers_referrer_policy(self):
         result = {}
+        result['recommendation'] = "Set a strict referrer policy to mitigate unnecessary disclosure of information."
         result['name'] = 'Referrer-Policy'
-        result['implemented'] = value;
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy'
-        result['status'] = 2
+        result['status'] = 'failed'
+        result['details'] = []
 
-        if value == '':
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if not headers.get('referrer-policy'):
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_referrer_policy'] = result
             return
 
-        value = value.lower()
+        result['implemented'] = headers.get('referrer-policy')
+
+        value = result['implemented'].lower()
         if value == 'no-referrer' or value == 'strict-origin' or value == 'strict-origin-when-cross-origin':
-            result['status'] = 0
+            result['status'] = 'passed'
 
         self.__results['http']['headers_referrer_policy'] = result
 
 
-    def __http_headers_frame_options(self, value=''):
+    def __http_headers_frame_options(self):
         result = {}
+        result['recommendation'] = "Use this header to mitigate clickjacking attacks."
         result['name'] = 'X-Frame-Options'
-        result['implemented'] = value;
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options'
-        result['status'] = 2
+        result['status'] = 'failed'
+        result['details'] = []
 
-        if value == '':
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if not headers.get('x-frame-options'):
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_frame_options'] = result
             return
 
-        value = value.lower()
+        result['implemented'] = headers.get('x-frame-options')
+
+        value = result['implemented'].lower()
         if value == 'deny' or value == 'sameorigin' or value.find('allow-from') != -1:
-            result['status'] = 0
+            result['status'] = 'passed'
         self.__results['http']['headers_frame_options'] = result
 
 
-    def __http_headers_xss_protection(self, value=''):
+    def __http_headers_xss_protection(self):
         result = {}
         result['name'] = 'X-XSS-Protection'
-        result['implemented'] = value;
-        result['correct'] = '1; mode=block';
+        result['recommendation'] = "Set the value to '1; mode=block' to prevent reflective XSS and stopping the remainding execution of the site.";
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection'
-        result['status'] = 2
+        result['details'] = []
+        result['status'] = 'failed'
+        
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
 
-        if value == '':
+        if not headers.get('x-xss-protection'):
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_xss_protection'] = result
             return
 
+        result['implemented'] = headers.get('x-xss-protection')
+
         if re.search('1;\s?mode=block', result['implemented']):
-            result['status'] = 0
+            result['status'] = 'passed'
 
         self.__results['http']['headers_xss_protection'] = result
 
 
-    def __http_same_origin_policy_ajax(self, value=''):
+    # TODO: Need also to create a check for the current origin somehow
+    def __http_same_origin_policy_ajax(self):
         result = {}
+        result['recommendation'] = ''
         result['ref'] = 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Origin'
-        result['status'] = 0
-        if value == '*':
-            result['status'] = 2
+        result['details'] = []
+        result['status'] = 'passed'
+
+        headers = self.__https['headers'] if self.__https_present else self.__http['headers']
+
+        if not headers.get('access-control-allow-origin'):
+            result['details'] = ['Header not implemented']
+            self.__results['http']['same_origin_policy_ajax'] = result
+            return
+
+        if headers.get('access-control-allow-origin') == '*':
+            result['status'] = 'failed'
         self.__results['http']['same_origin_policy_ajax'] = result
 
 
     def __http_same_origin_policy_flash(self):
         result = {}
+        result['recommendation'] = ''
         result['ref'] = 'https://www.adobe.com/devnet/adobe-media-server/articles/cross-domain-xml-for-streaming.html'
-        result['status'] = 0
+        result['status'] = 'passed'
         url = None
         try:
             url = urllib.request.urlopen('http://' + self.__domain + '/crossdomain.xml')
@@ -360,14 +415,15 @@ class hCheck(object):
             self.__results['http']['same_origin_policy_flash'] = result
             return
         if re.search('<allow-access-from domain="(https?://)?\*"', url.read().decode(), re.M):
-             result['status'] = 2
+             result['status'] = 'failed'
         self.__results['http']['same_origin_policy_flash'] = result
 
 
     def __http_same_origin_policy_silverlight(self):
         result = {}
+        result['recommendation'] = ''
         result['ref'] = 'https://docs.microsoft.com/en-us/previous-versions/windows/silverlight/dotnet-windows-silverlight/cc197955(v=vs.95)?redirectedfrom=MSDN'
-        result['status'] = 0
+        result['status'] = 'passed'
         url = None
         try:
             url = urllib.request.urlopen('http://' + self.__domain + '/clientaccesspolicy.xml')
@@ -375,27 +431,14 @@ class hCheck(object):
             self.__results['http']['same_origin_policy_silverlight'] = result
             return
         if re.search('<domain uri="(https?://)?\*"', url.read().decode(), re.M):
-             result['status'] = 2
+             result['status'] = 'failed'
         self.__results['http']['same_origin_policy_silverlight'] = result
-
-
-    def __http_redirect_to_https(self):
-        result = {}
-        result['status'] = 0
-        url = None
-        try:
-            url = urllib.request.urlopen('http://' + self.__domain).geturl()
-        except:
-            self.__results['http']['redirect_to_https'] = result
-            return
-        if url[0:5] != 'https':
-             result['status'] = 2
-        self.__results['http']['redirect_to_https'] = result
 
 
     def __email_spf(self):
         result = {}
-        result['status'] = 2
+        result['status'] = 'failed'
+        result['recommendation'] = 'End the SPF TXT record with "-all" or "~all" to prevent email spoofing.'
         result['ref'] = 'https://en.wikipedia.org/wiki/Sender_Policy_Framework'
         resolver = dns.resolver.Resolver()
         try:
@@ -408,7 +451,7 @@ class hCheck(object):
         for rdata in response:
             buf = buf + str(rdata)
         if re.search('[~|-]all', buf, re.M):
-            result['status'] = 0
+            result['status'] = 'passed'
 
         result['implemented'] = buf
         self.__results['email']['spf'] = result
@@ -416,8 +459,10 @@ class hCheck(object):
 
     def __email_dmarc(self):
         result = {}
-        result['status'] = 2
+        result['recommendation'] = 'Set p=reject to enable the SPF policy and prevent email spoofing.'
         result['ref'] = 'https://en.wikipedia.org/wiki/DMARC'
+        result['status'] = 'failed'
+
         resolver = dns.resolver.Resolver()
         try:
             response = resolver.query('_dmarc.' + self.__domain, "TXT")
@@ -429,9 +474,9 @@ class hCheck(object):
         for rdata in response:
             buf = buf + str(rdata)
         if re.search('p=none', buf, re.M):
-            result['status'] = 2
+            result['status'] = 'failed'
         else:
-            result['status'] = 0
+            result['status'] = 'passed'
         
         result['implemented'] = buf
         self.__results['email']['dmarc'] = result
@@ -439,8 +484,10 @@ class hCheck(object):
 
     def __domain_caa(self):
         result = {}
+        result['recommendation'] = 'Implement CAA to specify which CAs can issue certificates to your domain.'
         result['ref'] = 'https://en.wikipedia.org/wiki/DNS_Certification_Authority_Authorization'
-        result['status'] = 2
+        result['status'] = 'failed'
+
         resolver = dns.resolver.Resolver()
         try:
             response = resolver.query(self.__domain, "CAA")
@@ -452,14 +499,16 @@ class hCheck(object):
         for rdata in response:
             buf = buf + str(rdata)
         if re.search('issue ".*"', buf, re.M):
-            result['status'] = 0
+            result['status'] = 'passed'
         self.__results['domain']['caa'] = result
 
 
     def __domain_dnssec(self):
         result = {}
+        result['recommendation'] = 'Implement DNSSEC to help against DNS attacks.'
         result['ref'] = 'https://en.wikipedia.org/wiki/Domain_Name_System_Security_Extensions'
-        result['status'] = 2
+        result['status'] = 'failed'
+
         resolver = dns.resolver.Resolver()
         try:
             response = resolver.query(self.__domain, "DNSKEY")
@@ -467,14 +516,15 @@ class hCheck(object):
             self.__results['domain']['dnssec'] = result
             return
 
-        result['status'] = 0
+        result['status'] = 'passed'
         self.__results['domain']['dnssec'] = result
 
 
     def __domain_zone_transfer(self):
         result = {}
+        result['recommendation'] = 'Restrict zone transfers to prevent disclosing of DNS data.'
         result['ref'] = 'https://en.wikipedia.org/wiki/DNS_zone_transfer'
-        result['status'] = 0
+        result['status'] = 'passed'
 
         answer = str(dns.resolver.query(self.__domain, 'NS').rrset)
         ns = answer.split("\n")[0].split(' ')[4]
@@ -485,7 +535,7 @@ class hCheck(object):
             self.__results['domain']['zone_transfer'] = result
             return
 
-        result['status'] = 2
+        result['status'] = 'failed'
         self.__results['domain']['zone_transfer'] = result
 
         """
@@ -496,6 +546,11 @@ class hCheck(object):
 
 
     def __crypto_tls_versions(self):
+        result = {}
+        result['recommendation'] = ''
+        result['ref'] = ''
+        result['status'] = 'failed'
+
         depricated = ['tls1', 'tls1_1']
         for version in depricated:
             quit = subprocess.Popen(['echo', 'Q'], stdout=subprocess.PIPE)
@@ -505,30 +560,32 @@ class hCheck(object):
             except Exception as e:
                 output = e.output
             if re.search('New, \(NONE\), Cipher is \(NONE\)', output.decode(), re.M):
-                self.__results['crypto']['tls_support_' + version] = {'status': 0}
-            else:
-                self.__results['crypto']['tls_support_' + version] = {'status': 2}
+                 result['status'] = 'passed'
+
+            self.__results['crypto']['tls_support_' + version] = result
 
 
     def __crypto_ocsp_stapling(self):
         result = {}
+        result['recommendation'] = 'Implement OCSP stapling to check the revocation status of certificates.'
         result['ref'] = 'https://en.wikipedia.org/wiki/OCSP_stapling'
-        result['status'] = 0
+        result['status'] = 'failed'
 
         #echo QUIT | openssl s_client -connect example.no:443 -status 2> /dev/null | grep -A 17 'OCSP response:'
         quit = subprocess.Popen(['echo', 'Q'], stdout=subprocess.PIPE)
         output = subprocess.check_output(['openssl', 's_client', '-connect', self.__domain, '-port', '443', '-status'], stdin=quit.stdout, stderr=subprocess.DEVNULL)
 
         if re.search('OCSP Response Status: successful', output.decode(), re.I):
-            result['status'] = 0
+            result['status'] = 'passed'
         
         self.__results['crypto']['ocsp_stapling'] = result
 
 
     def __crypto_rsa_key_strength(self):
         result = {}
+        result['recommendation'] = ''
         result['ref'] = 'https://www.jscape.com/blog/should-i-start-using-4096-bit-rsa-keys'
-        result['status'] = 0
+        result['status'] = 'passed'
 
         #openssl s_client -connect example.com:443 2>/dev/null | openssl x509 -text -noout | grep "Public-Key"
         connect = subprocess.Popen(['openssl', 's_client', '-connect', self.__domain, '-port', '443'], stderr=subprocess.DEVNULL, stdout=subprocess.PIPE)
@@ -538,11 +595,11 @@ class hCheck(object):
         result['implemented'] = bit[0]
 
         if int(bit[0]) < 2048:
-            result['status'] = 2
+            result['status'] = 'failed'
         elif int(bit[0]) == 2048:
-            result['status'] = 0
+            result['status'] = 'passed'
         else:
-            result['status'] = 0
+            result['status'] = 'passed'
 
         self.__results['crypto']['rsa_key_strength'] = result
 
@@ -552,10 +609,9 @@ if __name__ == '__main__':
         print('./hcheck.py <domain>')
         sys.exit()
     check = hCheck(sys.argv[1])
-    check.crypto_check()
-    check.http_check()
-    check.domain_check()
-    check.email_check()
+    check.check_crypto()
+    check.check_http()
+    check.check_domain()
+    check.check_email()
     check.get_stats()
     check.print_results()
-
