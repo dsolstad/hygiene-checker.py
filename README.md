@@ -1,5 +1,5 @@
-# hcheck.py
-A passive hygiene scanner, presented as an API, to check for weaknesses of a domain. 
+# hygiene-check.py
+A passive hygiene checker, presented as an API, to check for weaknesses of a domain. 
 
 ## Requirements
 ```
