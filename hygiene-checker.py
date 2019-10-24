@@ -4,7 +4,7 @@
 # pip3 install dnspython
 # openssl
 #
-# ./hcheck.py <domain> | python3 -m json.tool
+# ./hygiene-checker.py <domain> | python3 -m json.tool
 #
 
 import urllib.parse
