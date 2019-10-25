@@ -33,3 +33,7 @@ $ python3 hygiene-checker.py <domain> | python3 -m json.tool
 ### Email
 * SPF
 * DMARC
+
+# LICENSE
+  
+GPLv3
