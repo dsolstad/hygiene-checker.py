@@ -293,7 +293,7 @@ class hCheck(object):
         headers = self.__https['headers'] if self.__https_present else self.__http['headers']
 
         if not headers.get('content-security-policy'):
-            result['status'] = 2
+            result['status'] = 'failed'
             result['details'] = ['Header not implemented']
             self.__results['http']['headers_content_security_policy'] = result
             return
